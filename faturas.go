@@ -3,10 +3,13 @@ package main
 import(
  "fmt"
  "os"
+ "io"
  "strings"
+ "archive/zip"
+ "path/filepath"
  "github.com/antchfx/xmlquery"
  //"github.com/nwaples/rardecode"
- //_ "github.com/xuri/excelize/v2"
+ //"github.com/xuri/excelize/v2"
 )
 
 type Data struct {
@@ -26,6 +29,7 @@ func parseXML(path string) (*Data, error) {
   if err != nil {
     return nil, err
   }
+  
   doc, err := xmlquery.Parse(strings.NewReader(string(d)))
   doc2, err := xmlquery.Parse(strings.NewReader(string(getText(doc, "//cbc:Description"))))
   if err != nil {
@@ -57,6 +61,84 @@ func getText(doc *xmlquery.Node, path string) string {
 	return ""
 }
 
+func procesarZip(path string) error {
+  r, err := zip.OpenReader(path)
+  if err != nil {
+      return err
+  }
+  defer r.Close()
+
+  var xmlPath, pdfPath string
+
+  // Extraer archivos
+  for _, f := range r.File {
+    rc, err := f.Open()
+    if err != nil {
+        return err
+    }
+    defer rc.Close()
+
+    outPath := filepath.Join(".", f.Name)
+    outFile, err := os.Create(outPath)
+    if err != nil {
+        return err
+    }
+
+    _, err = io.Copy(outFile, rc)
+    outFile.Close()
+    if err != nil {
+        return err
+    }
+
+    if strings.HasSuffix(strings.ToLower(f.Name), ".xml") {
+        xmlPath = outPath
+    } else if strings.HasSuffix(strings.ToLower(f.Name), ".pdf") {
+        pdfPath = outPath
+    }
+  }
+
+  if xmlPath != "" && pdfPath != "" {
+      proveedor, err := parseXML(xmlPath)
+      if err != nil {
+          return err
+      }
+
+      destinoDir := "pdfs_" + proveedor.Proveedor
+      os.MkdirAll(destinoDir, os.ModePerm)
+
+      nuevoNombre := strings.ReplaceAll(proveedor.Proveedor, " ", "_") + ".pdf"
+      destino := filepath.Join(destinoDir, nuevoNombre)
+
+      if err := os.Rename(pdfPath, destino); err != nil {
+          return err
+      }
+
+      fmt.Println("PDF movido a:", destino)
+      fmt.Println(proveedor)
+  }
+
+  return nil
+}
+
+func esZipValido(path string) bool {
+    f, err := os.Open(path)
+    if err != nil {
+        return false
+    }
+    defer f.Close()
+
+    cabecera := make([]byte, 4)
+    if _, err := f.Read(cabecera); err != nil {
+        return false
+    }
+
+    return cabecera[0] == 0x50 && cabecera[1] == 0x4B
+}
+
 func main() {
-  fmt.Println(parseXML("docs/ad08000699330212360124868.xml"))
+  
+  err := procesarZip("docs/ad08110421420002500028394.zip")
+  if err != nil {
+    fmt.Println(err)
+  }
 }

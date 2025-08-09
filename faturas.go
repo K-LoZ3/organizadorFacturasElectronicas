@@ -106,12 +106,14 @@ func procesarZip(path string) error {
       destinoDir := "pdfs_" + proveedor.Proveedor
       os.MkdirAll(destinoDir, os.ModePerm)
 
-      nuevoNombre := strings.ReplaceAll(proveedor.Proveedor, " ", "_") + ".pdf"
+      nuevoNombre := strings.ReplaceAll(proveedor.Proveedor  + "_" + proveedor.Fecha + "_" + proveedor.Total, " ", "_") + ".pdf"
       destino := filepath.Join(destinoDir, nuevoNombre)
 
       if err := os.Rename(pdfPath, destino); err != nil {
           return err
       }
+      
+      os.Remove(xmlPath)
 
       fmt.Println("PDF movido a:", destino)
       fmt.Println(proveedor)
@@ -120,25 +122,24 @@ func procesarZip(path string) error {
   return nil
 }
 
-func esZipValido(path string) bool {
-    f, err := os.Open(path)
-    if err != nil {
-        return false
-    }
-    defer f.Close()
-
-    cabecera := make([]byte, 4)
-    if _, err := f.Read(cabecera); err != nil {
-        return false
-    }
-
-    return cabecera[0] == 0x50 && cabecera[1] == 0x4B
-}
-
 func main() {
   
-  err := procesarZip("docs/ad08110421420002500028394.zip")
-  if err != nil {
-    fmt.Println(err)
-  }
+  carpeta := "."
+
+  filepath.Walk(carpeta, func(path string, info os.FileInfo, err error) error {
+      if err != nil {
+          return err
+      }
+      if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".zip") {
+          fmt.Println("Procesando:", path)
+          if err := procesarZip(path); err != nil {
+              fmt.Println("Error procesando zip:", err)
+          }
+          os.Remove(path)
+      }
+      return nil
+  })
+  
+  //err := procesarZip("docs/ad08110421420002500028394.zip")
+  
 }

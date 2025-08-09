@@ -4,12 +4,12 @@ import(
  "fmt"
  "os"
  "io"
+ "log"
  "strings"
  "archive/zip"
  "path/filepath"
  "github.com/antchfx/xmlquery"
- //"github.com/nwaples/rardecode"
- //"github.com/xuri/excelize/v2"
+ "github.com/xuri/excelize/v2"
 )
 
 type Data struct {
@@ -67,6 +67,16 @@ func procesarZip(path string) error {
       return err
   }
   defer r.Close()
+  
+  excelPath := "./facturas.xlsx"
+  sheetName := "Facturas"
+  
+  // Abrir o crear Excel una sola vez
+	f, nextRow, err := openExcel(excelPath, sheetName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
 
   var xmlPath, pdfPath string
 
@@ -98,28 +108,80 @@ func procesarZip(path string) error {
   }
 
   if xmlPath != "" && pdfPath != "" {
-      proveedor, err := parseXML(xmlPath)
-      if err != nil {
-          return err
-      }
+    factura, err := parseXML(xmlPath)
+    if err != nil {
+        return err
+    }
 
-      destinoDir := "pdfs_" + proveedor.Proveedor
-      os.MkdirAll(destinoDir, os.ModePerm)
+    destinoDir := "pdfs_" + factura.Proveedor
+    os.MkdirAll(destinoDir, os.ModePerm)
 
-      nuevoNombre := strings.ReplaceAll(proveedor.Proveedor  + "_" + proveedor.Fecha + "_" + proveedor.Total, " ", "_") + ".pdf"
-      destino := filepath.Join(destinoDir, nuevoNombre)
+    nuevoNombre := strings.ReplaceAll(factura.Proveedor  + "_" + factura.Fecha + "_" + factura.Total, " ", "_") + ".pdf"
+    destino := filepath.Join(destinoDir, nuevoNombre)
 
-      if err := os.Rename(pdfPath, destino); err != nil {
-          return err
-      }
-      
-      os.Remove(xmlPath)
+    if err := os.Rename(pdfPath, destino); err != nil {
+        return err
+    }
+    
+    os.Remove(xmlPath)
+    
+    appendRow(f, sheetName, nextRow, *factura)
+    nextRow++
 
-      fmt.Println("PDF movido a:", destino)
-      fmt.Println(proveedor)
+    fmt.Println("PDF movido a:", destino)
   }
-
+  
+  if err := f.SaveAs(excelPath); err != nil {
+		log.Fatal(err)
+	}
+	
   return nil
+}
+
+func openExcel(filePath string, sheet string) (*excelize.File, int, error) {
+	var f *excelize.File
+	var err error
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		// Si no existe, crear con encabezados
+		f = excelize.NewFile()
+		f.SetSheetName("Sheet1", sheet)
+		headers := []string{"Proveedor", "NIT Proveedor", "Fecha", "Cliente", "Base", "IVA 19%", "IVA 5%", "ReteICA", "Total"}
+		for i, header := range headers {
+			cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+			f.SetCellValue(sheet, cell, header)
+		}
+		return f, 2, nil // siguiente fila libre es la 2
+	}
+
+	// Si ya existe, abrir
+	f, err = excelize.OpenFile(filePath)
+	if err != nil {
+		return nil, 0, err
+	}
+	rows, err := f.GetRows(sheet)
+	if err != nil {
+		return nil, 0, err
+	}
+	return f, len(rows) + 1, nil
+}
+
+func appendRow(f *excelize.File, sheet string, rowNum int, data Data) {
+	values := []string{
+		data.Proveedor,
+		data.NitProveedor,
+		data.Fecha,
+		data.Cliente,
+		data.Base,
+		data.Iva19,
+		data.Iva5,
+		data.ReteIca,
+		data.Total,
+	}
+	for i, val := range values {
+		cell, _ := excelize.CoordinatesToCellName(i+1, rowNum)
+		f.SetCellValue(sheet, cell, val)
+	}
 }
 
 func main() {
@@ -139,7 +201,5 @@ func main() {
       }
       return nil
   })
-  
-  //err := procesarZip("docs/ad08110421420002500028394.zip")
   
 }

@@ -45,7 +45,8 @@ func parseXML(path string) (Data, error) {
     
     Proveedor: getText(doc2, "//cac:PartyTaxScheme//cbc:RegistrationName"),
 		NitProveedor: getText(doc2, "//cac:PartyTaxScheme//cbc:CompanyID"),
-		Cliente: getText(doc2, "//cac:AccountingCustomerParty//cac:Party//cac:PartyName//cbc:Name"),
+	
+		Cliente: getText(doc2, "//cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:RegistrationName"),
 		Total: getText(doc2, "//cbc:PayableAmount"),
 		Fecha: getText(doc2, "//cbc:IssueDate"),
 
@@ -230,21 +231,39 @@ func main() {
   carpeta := "."
   
   var facturas []Data
+  // Mover ZIP a carpeta zipsDir
+  destinoDir := "zipsDir"
+  os.MkdirAll(destinoDir, os.ModePerm)
 
   filepath.Walk(carpeta, func(path string, info os.FileInfo, err error) error {
+    
+    if err != nil {
+        return err
+    }
+    
+    // Saltar la carpeta zipsDir y su contenido
+    if info.IsDir() && filepath.Base(path) == "zipsDir" {
+      return filepath.SkipDir
+    }
+    
+    if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".zip") {
+      //fmt.Println("Procesando:", path)
+      factura, err := procesarZip(path)
       if err != nil {
-          return err
+          fmt.Println("Error procesando zip:", err)
       }
-      if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".zip") {
-          fmt.Println("Procesando:", path)
-          factura, err := procesarZip(path)
-          if err != nil {
-              fmt.Println("Error procesando zip:", err)
-          }
-          facturas = append(facturas, factura)
-          os.Remove(path)
+      facturas = append(facturas, factura)
+      
+      //os.Remove(path)
+      nuevoNombreZip := strings.ReplaceAll(factura.Proveedor  + "_" + factura.NumFactura, " ", "_") + ".zip"
+      
+      destinoZip := filepath.Join(destinoDir, nuevoNombreZip)
+
+      if err := os.Rename(path, destinoZip); err != nil {
+        fmt.Println("Error moviendo zip:", err)
       }
-      return nil
+    }
+    return nil
   })
   
   excelPath := "./facturas.xlsx"

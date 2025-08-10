@@ -26,19 +26,20 @@ type Data struct {
   Total string
 }
 
-func parseXML(path string) (*Data, error) {
+func parseXML(path string) (Data, error) {
+  var datos Data
   d, err := os.ReadFile(path)
   if err != nil {
-    return nil, err
+    return datos, err
   }
   
   doc, err := xmlquery.Parse(strings.NewReader(string(d)))
   doc2, err := xmlquery.Parse(strings.NewReader(string(getText(doc, "//cbc:Description"))))
   if err != nil {
-    return nil, err
+    return datos, err
   }
   
-  datos := &Data{
+  datos = Data{
     Proveedor: getText(doc2, "//cac:PartyTaxScheme//cbc:RegistrationName"),
 		NitProveedor: getText(doc2, "//cac:PartyTaxScheme//cbc:CompanyID"),
 		Cliente: getText(doc2, "//cac:AccountingCustomerParty//cac:Party//cac:PartyName//cbc:Name"),
@@ -63,10 +64,13 @@ func getText(doc *xmlquery.Node, path string) string {
 	return ""
 }
 
-func procesarZip(path string, f *excelize.File, excelPath string, sheetName string, nextRow int) error {
+func procesarZip(path string) (Data, error) {
+  var factura Data
+  var err error
+  
   r, err := zip.OpenReader(path)
   if err != nil {
-      return err
+      return factura, err
   }
   defer r.Close()
 
@@ -76,20 +80,20 @@ func procesarZip(path string, f *excelize.File, excelPath string, sheetName stri
   for _, file := range r.File {
     rc, err := file.Open()
     if err != nil {
-        return err
+        return factura, err
     }
     defer rc.Close()
 
     outPath := filepath.Join(".", file.Name)
     outFile, err := os.Create(outPath)
     if err != nil {
-        return err
+        return factura, err
     }
 
     _, err = io.Copy(outFile, rc)
     outFile.Close()
     if err != nil {
-        return err
+        return factura, err
     }
 
     if strings.HasSuffix(strings.ToLower(file.Name), ".xml") {
@@ -100,9 +104,9 @@ func procesarZip(path string, f *excelize.File, excelPath string, sheetName stri
   }
 
   if xmlPath != "" && pdfPath != "" {
-    factura, err := parseXML(xmlPath)
+    factura, err = parseXML(xmlPath)
     if err != nil {
-        return err
+      return factura, err
     }
 
     destinoDir := "pdfs_" + factura.Proveedor
@@ -112,17 +116,15 @@ func procesarZip(path string, f *excelize.File, excelPath string, sheetName stri
     destino := filepath.Join(destinoDir, nuevoNombre)
 
     if err := os.Rename(pdfPath, destino); err != nil {
-        return err
+        return factura, err
     }
     
     os.Remove(xmlPath)
-    
-    appendRow(f, sheetName, nextRow, *factura)
 
-    fmt.Println("PDF movido a:", destino)
+    //fmt.Println("PDF movido a:", destino)
   }
 	
-  return nil
+  return factura, err
 }
 
 func openExcel(filePath string, sheet string) (*excelize.File, int, error) {
@@ -213,6 +215,8 @@ func main() {
   excelPath := "./facturas.xlsx"
   sheetName := "Facturas"
   
+  var facturas []Data
+  
   // Abrir o crear Excel una sola vez
 	f, nextRow, err := openExcel(excelPath, sheetName)
 	if err != nil {
@@ -226,14 +230,20 @@ func main() {
       }
       if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".zip") {
           fmt.Println("Procesando:", path)
-          if err := procesarZip(path, f, excelPath, sheetName, nextRow); err != nil {
+          factura, err := procesarZip(path)
+          if err != nil {
               fmt.Println("Error procesando zip:", err)
           }
-          nextRow++
+          facturas = append(facturas, factura)
           os.Remove(path)
       }
       return nil
   })
+  
+  for _, factura := range facturas {
+    appendRow(f, sheetName, nextRow, factura)
+    nextRow++
+  }
   
   if err := f.SaveAs(excelPath); err != nil {
 		log.Fatal(err)

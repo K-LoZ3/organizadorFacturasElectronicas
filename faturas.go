@@ -15,6 +15,7 @@ import(
 )
 
 type Data struct {
+  NumFactura string
   Proveedor string
   NitProveedor string
   Fecha string
@@ -40,6 +41,8 @@ func parseXML(path string) (Data, error) {
   }
   
   datos = Data{
+    NumFactura: getText(doc2, "//cbc:ID"),
+    
     Proveedor: getText(doc2, "//cac:PartyTaxScheme//cbc:RegistrationName"),
 		NitProveedor: getText(doc2, "//cac:PartyTaxScheme//cbc:CompanyID"),
 		Cliente: getText(doc2, "//cac:AccountingCustomerParty//cac:Party//cac:PartyName//cbc:Name"),
@@ -111,15 +114,26 @@ func procesarZip(path string) (Data, error) {
 
     destinoDir := "pdfs_" + factura.Proveedor
     os.MkdirAll(destinoDir, os.ModePerm)
+    destinoXML := "xmlDir"
+    os.MkdirAll(destinoXML, os.ModePerm)
+    
 
-    nuevoNombre := strings.ReplaceAll(factura.Proveedor  + "_" + factura.Fecha + "_" + factura.Total, " ", "_") + ".pdf"
+    nuevoNombre := strings.ReplaceAll(factura.Proveedor  + "_" + factura.NumFactura, " ", "_") + ".pdf"
     destino := filepath.Join(destinoDir, nuevoNombre)
 
     if err := os.Rename(pdfPath, destino); err != nil {
         return factura, err
     }
     
-    os.Remove(xmlPath)
+    nuevoNombreXML := strings.ReplaceAll(factura.Proveedor  + "_" + factura.NumFactura, " ", "_") + ".xml"
+    
+    destino = filepath.Join(destinoXML, nuevoNombreXML)
+    
+    if err := os.Rename(xmlPath, destino); err != nil {
+        return factura, err
+    }
+    
+    //os.Remove(xmlPath)
 
     //fmt.Println("PDF movido a:", destino)
   }
@@ -127,7 +141,7 @@ func procesarZip(path string) (Data, error) {
   return factura, err
 }
 
-func openExcel(filePath string, sheet string) (*excelize.File, int, error) {
+func openExcel(filePath string, sheet string) (*excelize.File, [][]string, error) {
 	var f *excelize.File
 	var err error
 
@@ -135,29 +149,31 @@ func openExcel(filePath string, sheet string) (*excelize.File, int, error) {
 		// Si no existe, crear con encabezados
 		f = excelize.NewFile()
 		f.SetSheetName("Sheet1", sheet)
-		headers := []string{"Proveedor", "NIT Proveedor", "Fecha", "Cliente", "Base", "IVA 19%", "IVA 5%", "ReteICA", "Total"}
+		headers := []string{"Factura", "Proveedor", "NIT Proveedor", "Fecha", "Cliente", "Base", "IVA 19%", "IVA 5%", "ReteICA", "Total"}
 		for i, header := range headers {
 			cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 			f.SetCellValue(sheet, cell, header)
 		}
-		return f, 2, nil // siguiente fila libre es la 2
+		return f, [][]string{headers}, nil // siguiente fila libre es la 2
 	}
 
 	// Si ya existe, abrir
 	f, err = excelize.OpenFile(filePath)
 	if err != nil {
-		return nil, 0, err
+		return nil, [][]string{}, err
 	}
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return nil, 0, err
+		return nil, [][]string{}, err
 	}
-	return f, len(rows) + 1, nil
+	
+	return f, rows, nil
 }
 
 func appendRow(f *excelize.File, sheet string, rowNum int, data Data) {
 	// Datos en el orden deseado
 	values := []string{
+	  data.NumFactura,
 		data.Proveedor,
 		data.NitProveedor,
 		data.Fecha,
@@ -176,20 +192,21 @@ func appendRow(f *excelize.File, sheet string, rowNum int, data Data) {
 	numberStyle, _ := f.NewStyle(&excelize.Style{NumFmt: 2}) // Número decimal con 2 cifras
 
 	// Formato esperado para fecha
-	layout := "02/01/2006" // dd/mm/yyyy
+	layout := "2006/01/02" // yyyy/mm/dd
 
 	for i, val := range values {
 		cell, _ := excelize.CoordinatesToCellName(i+1, rowNum)
 
 		switch i {
-		case 2: // Fecha
+		case 3: // Fecha
+		  val = strings.ReplaceAll(val, "-", "/")
 			if t, err := time.Parse(layout, val); err == nil {
 				f.SetCellValue(sheet, cell, t)
 				f.SetCellStyle(sheet, cell, cell, dateStyle)
 				continue
 			}
 
-		case 4, 5, 6, 7, 8: // Montos y números
+		case 5, 6, 7, 8, 9: // Montos y números
 			if num, err := strconv.ParseFloat(strings.ReplaceAll(val, ",", ""), 64); err == nil {
 				if i == 4 || i == 8 { // Base y Total → moneda
 					f.SetCellValue(sheet, cell, num)
@@ -212,17 +229,7 @@ func main() {
   
   carpeta := "."
   
-  excelPath := "./facturas.xlsx"
-  sheetName := "Facturas"
-  
   var facturas []Data
-  
-  // Abrir o crear Excel una sola vez
-	f, nextRow, err := openExcel(excelPath, sheetName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
 
   filepath.Walk(carpeta, func(path string, info os.FileInfo, err error) error {
       if err != nil {
@@ -240,7 +247,32 @@ func main() {
       return nil
   })
   
+  excelPath := "./facturas.xlsx"
+  sheetName := "Facturas"
+  // Abrir o crear Excel una sola vez
+	f, rows, err := openExcel(excelPath, sheetName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	
+	m := make(map[string]bool, len(rows))
+  for i := range rows {
+    if len(rows[i]) < 2 {
+        continue
+    }
+    clave := rows[i][0] + "|" + rows[i][1]
+    m[clave] = true
+  }
+  
+  nextRow := len(rows) + 1
+  
   for _, factura := range facturas {
+    claveNueva := factura.NumFactura + "|" + factura.Proveedor
+    if m[claveNueva] {
+        continue
+    }
+    
     appendRow(f, sheetName, nextRow, factura)
     nextRow++
   }

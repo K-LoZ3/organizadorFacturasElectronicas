@@ -63,22 +63,12 @@ func getText(doc *xmlquery.Node, path string) string {
 	return ""
 }
 
-func procesarZip(path string) error {
+func procesarZip(path string, f *excelize.File, excelPath string, sheetName string, nextRow int) error {
   r, err := zip.OpenReader(path)
   if err != nil {
       return err
   }
   defer r.Close()
-  
-  excelPath := "./facturas.xlsx"
-  sheetName := "Facturas"
-  
-  // Abrir o crear Excel una sola vez
-	f, nextRow, err := openExcel(excelPath, sheetName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
 
   var xmlPath, pdfPath string
 
@@ -128,14 +118,9 @@ func procesarZip(path string) error {
     os.Remove(xmlPath)
     
     appendRow(f, sheetName, nextRow, *factura)
-    nextRow++
 
     fmt.Println("PDF movido a:", destino)
   }
-  
-  if err := f.SaveAs(excelPath); err != nil {
-		log.Fatal(err)
-	}
 	
   return nil
 }
@@ -224,6 +209,16 @@ func appendRow(f *excelize.File, sheet string, rowNum int, data Data) {
 func main() {
   
   carpeta := "."
+  
+  excelPath := "./facturas.xlsx"
+  sheetName := "Facturas"
+  
+  // Abrir o crear Excel una sola vez
+	f, nextRow, err := openExcel(excelPath, sheetName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
 
   filepath.Walk(carpeta, func(path string, info os.FileInfo, err error) error {
       if err != nil {
@@ -231,12 +226,16 @@ func main() {
       }
       if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".zip") {
           fmt.Println("Procesando:", path)
-          if err := procesarZip(path); err != nil {
+          if err := procesarZip(path, f, excelPath, sheetName, nextRow); err != nil {
               fmt.Println("Error procesando zip:", err)
           }
+          nextRow++
           os.Remove(path)
       }
       return nil
   })
   
+  if err := f.SaveAs(excelPath); err != nil {
+		log.Fatal(err)
+	}
 }

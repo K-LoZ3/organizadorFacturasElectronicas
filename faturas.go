@@ -5,7 +5,9 @@ import(
  "os"
  "io"
  "log"
+ "time"
  "strings"
+ "strconv"
  "archive/zip"
  "path/filepath"
  "github.com/antchfx/xmlquery"
@@ -81,14 +83,14 @@ func procesarZip(path string) error {
   var xmlPath, pdfPath string
 
   // Extraer archivos
-  for _, f := range r.File {
-    rc, err := f.Open()
+  for _, file := range r.File {
+    rc, err := file.Open()
     if err != nil {
         return err
     }
     defer rc.Close()
 
-    outPath := filepath.Join(".", f.Name)
+    outPath := filepath.Join(".", file.Name)
     outFile, err := os.Create(outPath)
     if err != nil {
         return err
@@ -100,9 +102,9 @@ func procesarZip(path string) error {
         return err
     }
 
-    if strings.HasSuffix(strings.ToLower(f.Name), ".xml") {
+    if strings.HasSuffix(strings.ToLower(file.Name), ".xml") {
         xmlPath = outPath
-    } else if strings.HasSuffix(strings.ToLower(f.Name), ".pdf") {
+    } else if strings.HasSuffix(strings.ToLower(file.Name), ".pdf") {
         pdfPath = outPath
     }
   }
@@ -167,6 +169,7 @@ func openExcel(filePath string, sheet string) (*excelize.File, int, error) {
 }
 
 func appendRow(f *excelize.File, sheet string, rowNum int, data Data) {
+	// Datos en el orden deseado
 	values := []string{
 		data.Proveedor,
 		data.NitProveedor,
@@ -178,9 +181,43 @@ func appendRow(f *excelize.File, sheet string, rowNum int, data Data) {
 		data.ReteIca,
 		data.Total,
 	}
+
+	// Formatos
+	textStyle, _ := f.NewStyle(&excelize.Style{NumFmt: 49})  // Texto
+	dateStyle, _ := f.NewStyle(&excelize.Style{NumFmt: 14})  // Fecha corta (dd/mm/yyyy)
+	moneyStyle, _ := f.NewStyle(&excelize.Style{NumFmt: 4})  // Moneda con separador de miles
+	numberStyle, _ := f.NewStyle(&excelize.Style{NumFmt: 2}) // Número decimal con 2 cifras
+
+	// Formato esperado para fecha
+	layout := "02/01/2006" // dd/mm/yyyy
+
 	for i, val := range values {
 		cell, _ := excelize.CoordinatesToCellName(i+1, rowNum)
+
+		switch i {
+		case 2: // Fecha
+			if t, err := time.Parse(layout, val); err == nil {
+				f.SetCellValue(sheet, cell, t)
+				f.SetCellStyle(sheet, cell, cell, dateStyle)
+				continue
+			}
+
+		case 4, 5, 6, 7, 8: // Montos y números
+			if num, err := strconv.ParseFloat(strings.ReplaceAll(val, ",", ""), 64); err == nil {
+				if i == 4 || i == 8 { // Base y Total → moneda
+					f.SetCellValue(sheet, cell, num)
+					f.SetCellStyle(sheet, cell, cell, moneyStyle)
+				} else { // IVA y retenciones → número con decimales
+					f.SetCellValue(sheet, cell, num)
+					f.SetCellStyle(sheet, cell, cell, numberStyle)
+				}
+				continue
+			}
+		}
+
+		// Por defecto, texto
 		f.SetCellValue(sheet, cell, val)
+		f.SetCellStyle(sheet, cell, cell, textStyle)
 	}
 }
 

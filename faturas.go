@@ -21,8 +21,12 @@ type Data struct {
   Fecha string
   Cliente string
   Base string
+  Descuento string
   Iva19 string
   Iva5 string
+  Ico string
+  ReteFuente string
+  ReteIVA string
   ReteIca string
   Total string
 }
@@ -41,20 +45,53 @@ func parseXML(path string) (Data, error) {
   }
   
   datos = Data{
-    NumFactura: getText(doc2, "//cbc:ID"),
+    NumFactura: getText(doc2, "//cbc:ID[not(ancestor::cac:*)]"),
     
-    Proveedor: getText(doc2, "//cac:PartyTaxScheme//cbc:RegistrationName"),
-		NitProveedor: getText(doc2, "//cac:PartyTaxScheme//cbc:CompanyID"),
+    Proveedor: getText(doc2, "//cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:RegistrationName"),
+    
+		NitProveedor: getText(doc2, "//cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID"),
 	
 		Cliente: getText(doc2, "//cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:RegistrationName"),
+		
 		Total: getText(doc2, "//cbc:PayableAmount"),
+		
 		Fecha: getText(doc2, "//cbc:IssueDate"),
 
 		Base: getText(doc2, "//cac:LegalMonetaryTotal//cbc:LineExtensionAmount"),
+		
+		Descuento: getText(doc2, "//cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount"),
+		
 		Iva19: getText(doc2, "//*[local-name()='TaxSubtotal'][.//*[local-name()='Percent']='19.00']//*[local-name()='TaxAmount']"),
 
 		Iva5: getText(doc2, "//*[local-name()='TaxSubtotal'][.//*[local-name()='Percent']='5.00']//*[local-name()='TaxAmount']"),
-		ReteIca: getText(doc2, "//*[local-name()='TaxScheme']/*[local-name()='Name'][text()='IC']/../../..//*[local-name()='TaxAmount']"),
+		
+		ReteIca: getText(doc2, "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='05']/../../..//*[local-name()='TaxAmount']"),
+		
+		ReteFuente: getText(doc2, "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='06']/../../..//*[local-name()='TaxAmount']"),
+		
+		ReteIVA: getText(doc2, "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='04']/../../..//*[local-name()='TaxAmount']"),
+		
+		Ico: getText(doc2, "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='02']/../../..//*[local-name()='TaxAmount']"),
+		
+		/*
+		IVA 19%
+    "//*[local-name()='TaxSubtotal'][.//*[local-name()='Percent']='19.00']//*[local-name()='TaxAmount']"
+    
+    IVA 5%
+    "//*[local-name()='TaxSubtotal'][.//*[local-name()='Percent']='5.00']//*[local-name()='TaxAmount']"
+    
+    ReteICA (código 05)
+    "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='05']/../../..//*[local-name()='TaxAmount']"
+    
+    ReteFuente (código 06)
+    "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='06']/../../..//*[local-name()='TaxAmount']"
+    
+    ReteIVA (código 04)
+    "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='04']/../../..//*[local-name()='TaxAmount']"
+    
+    ICO (código 02)
+    "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='02']/../../..//*[local-name()='TaxAmount']"
+		*/
   }
   
   return datos, nil
@@ -150,7 +187,7 @@ func openExcel(filePath string, sheet string) (*excelize.File, [][]string, error
 		// Si no existe, crear con encabezados
 		f = excelize.NewFile()
 		f.SetSheetName("Sheet1", sheet)
-		headers := []string{"Factura", "Proveedor", "NIT Proveedor", "Fecha", "Cliente", "Base", "IVA 19%", "IVA 5%", "ReteICA", "Total"}
+		headers := []string{"Factura", "Proveedor", "NIT Proveedor", "Fecha", "Cliente", "Base", "Descuento", "IVA 19%", "IVA 5%", "ICO", "Retefuente", "Reteiva", "Reteica", "Total"}
 		for i, header := range headers {
 			cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 			f.SetCellValue(sheet, cell, header)
@@ -180,8 +217,12 @@ func appendRow(f *excelize.File, sheet string, rowNum int, data Data) {
 		data.Fecha,
 		data.Cliente,
 		data.Base,
+		data.Descuento,
 		data.Iva19,
 		data.Iva5,
+		data.Ico,
+		data.ReteFuente,
+		data.ReteIVA,
 		data.ReteIca,
 		data.Total,
 	}
@@ -207,7 +248,7 @@ func appendRow(f *excelize.File, sheet string, rowNum int, data Data) {
 				continue
 			}
 
-		case 5, 6, 7, 8, 9: // Montos y números
+		case 5, 6, 7, 8, 9, 10, 11, 12, 13: // Montos y números
 			if num, err := strconv.ParseFloat(strings.ReplaceAll(val, ",", ""), 64); err == nil {
 				if i == 4 || i == 8 { // Base y Total → moneda
 					f.SetCellValue(sheet, cell, num)

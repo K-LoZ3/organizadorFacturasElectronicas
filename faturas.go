@@ -29,6 +29,8 @@ type Data struct {
   ReteIVA string
   ReteIca string
   Total string
+  InfRt string
+  Items string
 }
 
 func parseXML(path string) (Data, error) {
@@ -43,6 +45,17 @@ func parseXML(path string) (Data, error) {
   if err != nil {
     return datos, err
   }
+  
+  nodes := xmlquery.Find(doc2, "//cbc:Description")
+  var descripciones []string
+	for _, n := range nodes {
+		descripciones = append(descripciones, n.InnerText())
+	}
+	// Unir todas las descripciones con punto y coma
+	items := strings.Join(descripciones, "; ")
+  
+  taxNode := getText(doc2, "//cac:AccountingSupplierParty//cac:Party//cac:PartyTaxScheme//cbc:TaxLevelCode")
+  taxNode = debeRetener(taxNode)
   
   datos = Data{
     NumFactura: getText(doc2, "//cbc:ID[not(ancestor::cac:*)]"),
@@ -73,25 +86,9 @@ func parseXML(path string) (Data, error) {
 		
 		Ico: getText(doc2, "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='02']/../../..//*[local-name()='TaxAmount']"),
 		
-		/*
-		IVA 19%
-    "//*[local-name()='TaxSubtotal'][.//*[local-name()='Percent']='19.00']//*[local-name()='TaxAmount']"
-    
-    IVA 5%
-    "//*[local-name()='TaxSubtotal'][.//*[local-name()='Percent']='5.00']//*[local-name()='TaxAmount']"
-    
-    ReteICA (código 05)
-    "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='05']/../../..//*[local-name()='TaxAmount']"
-    
-    ReteFuente (código 06)
-    "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='06']/../../..//*[local-name()='TaxAmount']"
-    
-    ReteIVA (código 04)
-    "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='04']/../../..//*[local-name()='TaxAmount']"
-    
-    ICO (código 02)
-    "//*[local-name()='TaxScheme']/*[local-name()='ID'][text()='02']/../../..//*[local-name()='TaxAmount']"
-		*/
+		InfRt: taxNode,
+		
+		Items: items,
   }
   
   return datos, nil
@@ -187,7 +184,7 @@ func openExcel(filePath string, sheet string) (*excelize.File, [][]string, error
 		// Si no existe, crear con encabezados
 		f = excelize.NewFile()
 		f.SetSheetName("Sheet1", sheet)
-		headers := []string{"Factura", "Proveedor", "NIT Proveedor", "Fecha", "Cliente", "Base", "Descuento", "IVA 19%", "IVA 5%", "ICO", "Retefuente", "Reteiva", "Reteica", "Total"}
+		headers := []string{"Factura", "Proveedor", "NIT Proveedor", "Fecha", "Cliente", "Base", "Descuento", "IVA 19%", "IVA 5%", "ICO", "Retefuente", "Reteiva", "Reteica", "Total", "Info Rete", "Items"}
 		for i, header := range headers {
 			cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 			f.SetCellValue(sheet, cell, header)
@@ -225,6 +222,8 @@ func appendRow(f *excelize.File, sheet string, rowNum int, data Data) {
 		data.ReteIVA,
 		data.ReteIca,
 		data.Total,
+		data.InfRt,
+		data.Items,
 	}
 
 	// Formatos
@@ -265,6 +264,31 @@ func appendRow(f *excelize.File, sheet string, rowNum int, data Data) {
 		f.SetCellValue(sheet, cell, val)
 		f.SetCellStyle(sheet, cell, cell, textStyle)
 	}
+}
+
+// Mapa de códigos que NO retienen
+var noRetencionCodes = map[string]bool{
+    "O-15":    true, // Autorretenedor
+    "O-47":    true, // Régimen simple de tributación
+    "R-99-PN": true, // No responsable
+    "O-49":    true, // No responsable de IVA
+    "A-62":    true, // Importador Ocasional
+    "A-64":    true, // Beneficiario Programa de Fomento Industria Automotriz-PROFIA
+}
+
+func debeRetener(codigos string) string {
+  partes := strings.Split(codigos, ";")
+  
+  for _, c := range partes {
+    c = strings.TrimSpace(c)
+    // Si alguno NO está en la lista de no retención, entonces debe retener
+    if noRetencionCodes[c] {
+      // Si está en lista de no retención, no retiene
+      return "No retención"
+    }
+  }
+  
+  return "Posible retención"
 }
 
 func main() {

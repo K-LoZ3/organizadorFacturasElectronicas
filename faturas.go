@@ -340,7 +340,7 @@ func main() {
     return nil
   })
   
-  excelPath := "./docs/facturas.xlsx"
+  excelPath := "./facturas.xlsx"
   sheetName := "Facturas"
   // Abrir o crear Excel una sola vez
 	f, rows, err := openExcel(excelPath, sheetName)

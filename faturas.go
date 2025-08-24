@@ -10,8 +10,11 @@ import(
  "strconv"
  "archive/zip"
  "path/filepath"
+ 
  "github.com/antchfx/xmlquery"
  "github.com/xuri/excelize/v2"
+ 
+ "Practicas/facturas/gmail"
 )
 
 type Data struct {
@@ -296,6 +299,8 @@ func debeRetener(codigos string) string {
 }
 
 func main() {
+  
+  gmail.DescargarZips()
   
   carpeta := "./docs"
   

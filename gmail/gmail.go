@@ -1,4 +1,4 @@
-package main
+package gmail
 
 import (
   "bufio"
@@ -17,7 +17,7 @@ import (
   "github.com/emersion/go-message/mail"
 )
 
-func main() {
+func DescargarZips() {
   reader := bufio.NewReader(os.Stdin)
 
   fmt.Print("Correo Gmail: ")

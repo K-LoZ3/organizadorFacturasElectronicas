@@ -41,9 +41,13 @@ func parseXML(path string) (Data, error) {
   }
   
   doc, err := xmlquery.Parse(strings.NewReader(string(d)))
-  doc2, err := xmlquery.Parse(strings.NewReader(string(getText(doc, "//cbc:Description"))))
   if err != nil {
     return datos, err
+  }
+  doc2, err := xmlquery.Parse(strings.NewReader(string(getText(doc, "//cbc:Description"))))
+  if err != nil {
+    //return datos, fmt.Errorf("&",string(getText(doc, "//cbc:Description")), "&",err)
+    doc2 = doc
   }
   
   nodes := xmlquery.Find(doc2, "//cbc:Description")
@@ -122,7 +126,7 @@ func procesarZip(path string) (Data, error) {
     }
     defer rc.Close()
 
-    outPath := filepath.Join(".", file.Name)
+    outPath := filepath.Join("./docs", file.Name)
     outFile, err := os.Create(outPath)
     if err != nil {
         return factura, err
@@ -144,12 +148,12 @@ func procesarZip(path string) (Data, error) {
   if xmlPath != "" && pdfPath != "" {
     factura, err = parseXML(xmlPath)
     if err != nil {
-      return factura, err
+      return factura, fmt.Errorf(xmlPath, err)
     }
 
-    destinoDir := "pdfs_" + factura.Proveedor
+    destinoDir := "docs/pdfs_" + factura.Proveedor
     os.MkdirAll(destinoDir, os.ModePerm)
-    destinoXML := "xmlDir"
+    destinoXML := "docs/xmlDir"
     os.MkdirAll(destinoXML, os.ModePerm)
     
 
@@ -293,11 +297,11 @@ func debeRetener(codigos string) string {
 
 func main() {
   
-  carpeta := "."
+  carpeta := "./docs"
   
   var facturas []Data
   // Mover ZIP a carpeta zipsDir
-  destinoDir := "zipsDir"
+  destinoDir := "docs/zipsDir"
   os.MkdirAll(destinoDir, os.ModePerm)
 
   filepath.Walk(carpeta, func(path string, info os.FileInfo, err error) error {
@@ -331,7 +335,7 @@ func main() {
     return nil
   })
   
-  excelPath := "./facturas.xlsx"
+  excelPath := "./docs/facturas.xlsx"
   sheetName := "Facturas"
   // Abrir o crear Excel una sola vez
 	f, rows, err := openExcel(excelPath, sheetName)
